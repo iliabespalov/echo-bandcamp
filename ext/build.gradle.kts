@@ -27,7 +27,7 @@ android {
 
 dependencies {
     // Echo common API
-    compileOnly("com.github.brahmkshatriya:echo:1.0.0")
+    compileOnly("dev.brahmkshatriya.echo:common:1.0.0")
 
     // HTTP client
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
