@@ -34,7 +34,9 @@ jobs:
         run: echo "$KEYSTORE_B64" | base64 --decode > keystore.jks
 
       - name: Build release APK
-        run: ./gradlew :app:assembleRelease
+        run: |
+          chmod +x ./gradlew
+          ./gradlew :app:assembleRelease
 
       - name: Sign APK
         if: env.KEYSTORE_B64 != ''
