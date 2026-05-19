@@ -10,10 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://jitpack.io") }
     }
 }
-
 rootProject.name = "echo-bandcamp-extension"
 include(":app")
 include(":ext")
