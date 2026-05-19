@@ -1,4 +1,4 @@
-# Bandcamp Extension for Echo
+# Bandcamp Extension for Echo123
 
 Browse, search and stream Bandcamp's independent music catalog directly in the [Echo music player](https://github.com/brahmkshatriya/echo).
 
