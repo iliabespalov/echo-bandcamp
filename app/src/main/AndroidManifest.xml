@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Tells Echo this is a Music Extension -->
+    <uses-feature android:name="dev.brahmkshatriya.echo.music" />
+
+    <application
+        android:allowBackup="false"
+        android:label="@string/app_name">
+
+        <meta-data
+            android:name="class"
+            android:value="dev.brahmkshatriya.echo.extension.BandcampExtension" />
+
+        <meta-data
+            android:name="id"
+            android:value="bandcamp" />
+
+        <meta-data
+            android:name="name"
+            android:value="Bandcamp" />
+
+        <meta-data
+            android:name="version"
+            android:value="1.0.0" />
+
+        <meta-data
+            android:name="description"
+            android:value="Bandcamp for Echo — browse, search and stream independent music" />
+
+        <meta-data
+            android:name="author"
+            android:value="community" />
+
+        <meta-data
+            android:name="iconUrl"
+            android:value="https://s4.bcbits.com/img/favicon/apple-touch-icon.png" />
+
+    </application>
+
+</manifest>
