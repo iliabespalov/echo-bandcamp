@@ -1,29 +1,19 @@
-#!/bin/sh
-#
-# Gradle start up script for UN*X
-#
+#!/usr/bin/env sh
 
-# Attempt to set APP_HOME
-PRG="$0"
-while [ -h "$PRG" ] ; do
-    ls=$(ls -ld "$PRG")
-    link=$(expr "$ls" : '.*-> \(.*\)$')
-    if expr "$link" : '/.*' > /dev/null; then
-        PRG="$link"
-    else
-        PRG=$(dirname "$PRG")"/$link"
-    fi
-done
-SAVED="$(pwd)"
-cd "$(dirname \"$PRG\")/" >/dev/null
-APP_HOME="$(pwd -P)"
-cd "$SAVED" >/dev/null
+##############################################################################
+##
+##  Gradle start up script for UN*X
+##
+##############################################################################
 
-APP_NAME="Gradle"
-APP_BASE_NAME=$(basename "$0")
-
+# Add default JVM options here. You can also use JAVA_OPTS and GRADLE_OPTS
+# to pass JVM options to this script.
 DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'
 
+APP_NAME="Gradle"
+APP_BASE_NAME=`basename "$0"`
+
+# Use the maximum available, or set MAX_FD != -1 to use that value.
 MAX_FD="maximum"
 
 warn () {
@@ -37,30 +27,75 @@ die () {
     exit 1
 }
 
-OS=$(uname)
-case $OS in
-    CYGWIN*|MINGW*|MSYS*|MinGW*)
-        cygwin=true
-        ;;
-    Darwin*)
-        darwin=true
-        ;;
-    NONSTOP*)
-        nonstop=true
-        ;;
+# OS specific support (must be 'true' or 'false').
+cygwin=false
+msys=false
+darwin=false
+nonstop=false
+case "`uname`" in
+  CYGWIN* )
+    cygwin=true
+    ;;
+  Darwin* )
+    darwin=true
+    ;;
+  MINGW* )
+    msys=true
+    ;;
+  NONSTOP* )
+    nonstop=true
+    ;;
 esac
 
-CLASSPATH=""
+CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
 
 # Determine the Java command to use to start the JVM.
 if [ -n "$JAVA_HOME" ] ; then
-    JAVACMD="$JAVA_HOME/bin/java"
+    if [ -x "$JAVA_HOME/jre/sh/java" ] ; then
+        JAVACMD="$JAVA_HOME/jre/sh/java"
+    else
+        JAVACMD="$JAVA_HOME/bin/java"
+    fi
     if [ ! -x "$JAVACMD" ] ; then
-        die "ERROR: JAVA_HOME is set to an invalid directory: $JAVA_HOME"
+        die "ERROR: JAVA_HOME is set to an invalid directory: $JAVA_HOME
+
+Please set the JAVA_HOME variable in your environment to match the
+location of your Java installation."
     fi
 else
     JAVACMD="java"
-    java -version >/dev/null 2>&1 || die "ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH."
+    which java > /dev/null 2>&1 || die "ERROR: JAVA_HOME is not set and no 'java' command could be found in your PATH.
+
+Please set the JAVA_HOME variable in your environment to match the
+location of your Java installation."
+fi
+
+# Increase the maximum file descriptors if we can.
+if [ "$cygwin" = "false" -a "$darwin" = "false" -a "$nonstop" = "false" ] ; then
+    MAX_FD_LIMIT=`ulimit -H -n`
+    if [ $? -eq 0 ] ; then
+        if [ "$MAX_FD" = "maximum" -o "$MAX_FD" = "max" ] ; then
+            MAX_FD="$MAX_FD_LIMIT"
+        fi
+        ulimit -n $MAX_FD
+        if [ $? -ne 0 ] ; then
+            warn "Could not set maximum file descriptor limit: $MAX_FD"
+        fi
+    else
+        warn "Could not query maximum file descriptor limit: $MAX_FD_LIMIT"
+    fi
+fi
+
+# For Darwin, add options to specify how the application appears in the dock
+if $darwin; then
+    GRADLE_OPTS="$GRADLE_OPTS \"-Xdock:name=$APP_NAME\" \"-Xdock:icon=$APP_HOME/media/gradle.icns\""
+fi
+
+# For Cygwin, switch paths to Windows format before running java
+if $cygwin ; then
+    APP_HOME=`cygpath --path --mixed "$APP_HOME"`
+    CLASSPATH=`cygpath --path --mixed "$CLASSPATH"`
+    JAVACMD=`cygpath --unix "$JAVACMD"`
 fi
 
 # Escape application args
