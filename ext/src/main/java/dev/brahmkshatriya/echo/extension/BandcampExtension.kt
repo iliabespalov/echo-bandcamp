@@ -94,30 +94,43 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
         search(query, "b").map { it.toArtist() }
 
     private fun parseResults(html: String, filterType: String): List<RawItem> {
-        val results = mutableListOf<RawItem>()
-        val blockRe = Regex("""<li[^>]*class="[^"]*searchresult[^"]*"[^>]*>(.*?)</li>""", RegexOption.DOT_MATCHES_ALL)
-        val typeRe = Regex("""<div[^>]*class="[^"]*itemtype[^"]*"[^>]*>\s*(\w+)\s*</div>""")
-        val hrefRe = Regex("""<a[^>]*href="([^"?#]+)""")
-        val titleRe = Regex("""<div[^>]*class="[^"]*heading[^"]*"[^>]*>.*?<a[^>]*>\s*([^<]+?)\s*</a>""", RegexOption.DOT_MATCHES_ALL)
-        val subRe = Regex("""<div[^>]*class="[^"]*subhead[^"]*"[^>]*>\s*(.*?)\s*</div>""", RegexOption.DOT_MATCHES_ALL)
-        val imgRe = Regex("""<img[^>]*src="(https://[^"]+f4\.bcbits\.com[^"]+)"""")
-        val typeMap = mapOf("t" to "track", "a" to "album", "b" to "band")
-        val wanted = typeMap[filterType] ?: filterType
-        for (m in blockRe.findAll(html)) {
-            val block = m.groupValues[1]
-            val type = typeRe.find(block)?.groupValues?.get(1)?.lowercase() ?: continue
-            if (type != wanted) continue
-            val url = hrefRe.find(block)?.groupValues?.get(1)?.trim() ?: continue
-            val title = titleRe.find(block)?.groupValues?.get(1)?.trim()?.unescapeHtml() ?: continue
-            val sub = subRe.find(block)?.groupValues?.get(1)
-                ?.replace(Regex("<[^>]+>"), "")?.trim()?.unescapeHtml() ?: ""
-            val artist = sub.removePrefix("by").removePrefix("from").trim().lines().firstOrNull()?.trim() ?: ""
-            val img = imgRe.find(block)?.groupValues?.get(1)
-            results += RawItem(type, title, artist, if (url.startsWith("http")) url else "https://bandcamp.com$url", img)
-        }
-        return results
-    }
+    val results = mutableListOf<RawItem>()
 
+    // ключевое исправление: class содержит "searchresult" но не обязательно заканчивается на него
+    val blockRe = Regex(
+        """<li[^>]*class="[^"]*searchresult[^"]*"[^>]*>(.*?)</li>""",
+        setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
+    )
+    val typeRe = Regex("""<div[^>]*class="[^"]*itemtype[^"]*"[^>]*>\s*(\w+)\s*</div>""")
+    val hrefRe = Regex("""<a[^>]*href="(https://[^"?#]+)""")
+    val titleRe = Regex("""<div[^>]*class="[^"]*heading[^"]*"[^>]*>.*?<a[^>]*>\s*([^<\n]+?)\s*</a>""", RegexOption.DOT_MATCHES_ALL)
+    val subRe = Regex("""<div[^>]*class="[^"]*subhead[^"]*"[^>]*>(.*?)</div>""", RegexOption.DOT_MATCHES_ALL)
+    val imgRe = Regex("""<img[^>]*src="(https://f4\.bcbits\.com/img/[^"]+)"""")
+
+    val typeMap = mapOf("t" to "track", "a" to "album", "b" to "band")
+    val wanted = typeMap[filterType] ?: filterType
+
+    for (m in blockRe.findAll(html)) {
+        val block = m.groupValues[1]
+        val type = typeRe.find(block)?.groupValues?.get(1)?.trim()?.lowercase() ?: continue
+        if (type != wanted) continue
+        val url = hrefRe.find(block)?.groupValues?.get(1)?.trim() ?: continue
+        val title = titleRe.find(block)?.groupValues?.get(1)?.trim()?.unescapeHtml() ?: continue
+        // subhead для треков: "from ALBUM\nby ARTIST" или просто "by ARTIST"
+        val sub = subRe.find(block)?.groupValues?.get(1)
+            ?.replace(Regex("<[^>]+>"), "")
+            ?.lines()
+            ?.map { it.trim() }
+            ?.filter { it.isNotBlank() }
+            ?: emptyList()
+        // берём последнюю непустую строку — там обычно "by Radiohead"
+        val artistLine = sub.lastOrNull() ?: ""
+        val artist = artistLine.removePrefix("by").trim().unescapeHtml()
+        val img = imgRe.find(block)?.groupValues?.get(1)
+        results += RawItem(type, title, artist, url, img)
+    }
+    return results
+}
     private fun RawItem.toTrack() = Track(
         id = url, title = title,
         artists = listOfNotNull(artist.takeIf { it.isNotBlank() }?.let { Artist(it, it) }),
