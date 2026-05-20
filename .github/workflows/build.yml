@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,9 +21,6 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
-
       - name: Install Gradle
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.6-bin.zip
@@ -28,26 +28,27 @@ jobs:
           echo "/opt/gradle/gradle-8.6/bin" >> $GITHUB_PATH
 
       - name: Decode keystore
-        if: env.KEYSTORE_B64 != ''
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-        run: echo "$KEYSTORE_B64" | base64 --decode > keystore.jks
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > keystore.jks
+          fi
 
       - name: Build release APK
-        run: gradle :app:assembleRelease
-
-      - name: Sign APK
-        if: env.KEYSTORE_B64 != ''
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-          PASSWORD: ${{ secrets.PASSWORD }}
-        uses: r0adkll/sign-android-release@v1
-        with:
-          releaseDirectory: app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.KEYSTORE_B64 }}
-          alias: key0
-          keyStorePassword: ${{ secrets.PASSWORD }}
-          keyPassword: ${{ secrets.PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            gradle :app:assembleRelease \
+              -Pandroid.injected.signing.store.file=$PWD/keystore.jks \
+              -Pandroid.injected.signing.store.password=$KEY_PASSWORD \
+              -Pandroid.injected.signing.key.alias=key0 \
+              -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+          else
+            gradle :app:assembleRelease
+          fi
 
       - name: Get version
         id: version
@@ -68,13 +69,4 @@ jobs:
           files: "*.eapk"
           body: |
             ## Bandcamp Extension for Echo
-            
-            ### Installation
-            1. Download the `.eapk` file below
-            2. Open it on your Android device and select Echo as the handler
-            3. Enjoy Bandcamp in Echo!
-            
-            ### Features
-            - Search tracks, albums, artists
-            - Stream mp3-128 previews
-            - Browse artist discography
+            Download the .eapk file, open on Android, select Echo.
