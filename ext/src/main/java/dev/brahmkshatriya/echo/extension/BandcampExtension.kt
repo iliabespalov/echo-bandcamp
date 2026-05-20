@@ -8,11 +8,15 @@ import dev.brahmkshatriya.echo.common.clients.TrackClient
 import dev.brahmkshatriya.echo.common.helpers.PagedData
 import dev.brahmkshatriya.echo.common.models.Album
 import dev.brahmkshatriya.echo.common.models.Artist
+import dev.brahmkshatriya.echo.common.models.EchoMediaItem
 import dev.brahmkshatriya.echo.common.models.Feed
+import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeed
+import dev.brahmkshatriya.echo.common.models.Feed.Companion.toFeedData
 import dev.brahmkshatriya.echo.common.models.ImageHolder.Companion.toImageHolder
 import dev.brahmkshatriya.echo.common.models.Shelf
 import dev.brahmkshatriya.echo.common.models.Streamable
 import dev.brahmkshatriya.echo.common.models.Streamable.Media.Companion.toServerMedia
+import dev.brahmkshatriya.echo.common.models.Tab
 import dev.brahmkshatriya.echo.common.models.Track
 import dev.brahmkshatriya.echo.common.settings.Setting
 import dev.brahmkshatriya.echo.common.settings.Settings
@@ -24,8 +28,6 @@ import java.util.concurrent.TimeUnit
 
 class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumClient, ArtistClient {
 
-    // ─── HTTP ────────────────────────────────────────────────────────────────
-
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
@@ -36,12 +38,10 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
                     .header("Accept-Language", "en-US,en;q=0.9")
                     .build()
             )
-        }
-        .build()
+        }.build()
 
     private fun get(url: String): String {
-        val req = Request.Builder().url(url).build()
-        http.newCall(req).execute().use { resp ->
+        http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
             if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}: $url")
             return resp.body?.string() ?: ""
         }
@@ -55,252 +55,6 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
     // ─── SearchFeedClient ────────────────────────────────────────────────────
 
     override suspend fun loadSearchFeed(query: String): Feed<Shelf> {
-        val tabs = listOf("Tracks", "Albums", "Artists").map {
-            dev.brahmkshatriya.echo.common.models.Tab(it, it)
-        }
+        val tabs = listOf("Tracks", "Albums", "Artists").map { Tab(it, it) }
         return Feed(tabs) { tab ->
-            val shelves: List<Shelf> = when (tab?.id) {
-                "Albums" -> searchAlbums(query).map { Shelf.Lists.Items("", it.title, PagedData.Single { listOf(it.toMediaItem()) }) }
-                "Artists" -> searchArtists(query).map { Shelf.Lists.Items("", it.name, PagedData.Single { listOf(it.toMediaItem()) }) }
-                else -> searchTracks(query).map { Shelf.Item(it.toMediaItem()) }
-            }
-            PagedData.Single { shelves }.toFeedData()
-        }
-    }
-
-    // ─── Internal search ─────────────────────────────────────────────────────
-
-    private data class RawItem(
-        val type: String,
-        val title: String,
-        val artist: String,
-        val url: String,
-        val imageUrl: String?
-    )
-
-    private fun search(query: String, itemType: String): List<RawItem> {
-        val html = get("https://bandcamp.com/search?q=${encode(query)}&item_type=$itemType")
-        return parseResults(html, itemType)
-    }
-
-    private fun searchTracks(query: String) = search(query, "t").map { it.toTrack() }
-    private fun searchAlbums(query: String) = search(query, "a").map { it.toAlbum() }
-    private fun searchArtists(query: String) = search(query, "b").map { it.toArtist() }
-
-    private fun parseResults(html: String, filterType: String): List<RawItem> {
-        val results = mutableListOf<RawItem>()
-        val blockRe = Regex("""<li[^>]*class="[^"]*searchresult[^"]*"[^>]*>(.*?)</li>""", RegexOption.DOT_MATCHES_ALL)
-        val typeRe = Regex("""<div[^>]*class="[^"]*itemtype[^"]*"[^>]*>\s*(\w+)\s*</div>""")
-        val hrefRe = Regex("""<a[^>]*href="([^"?#]+)""")
-        val titleRe = Regex("""<div[^>]*class="[^"]*heading[^"]*"[^>]*>.*?<a[^>]*>\s*([^<]+?)\s*</a>""", RegexOption.DOT_MATCHES_ALL)
-        val subRe = Regex("""<div[^>]*class="[^"]*subhead[^"]*"[^>]*>\s*(.*?)\s*</div>""", RegexOption.DOT_MATCHES_ALL)
-        val imgRe = Regex("""<img[^>]*src="(https://[^"]+f4\.bcbits\.com[^"]+)"""")
-
-        val typeMap = mapOf("t" to "track", "a" to "album", "b" to "band")
-        val wantedType = typeMap[filterType] ?: filterType
-
-        for (m in blockRe.findAll(html)) {
-            val block = m.groupValues[1]
-            val type = typeRe.find(block)?.groupValues?.get(1)?.lowercase() ?: continue
-            if (type != wantedType) continue
-            val url = hrefRe.find(block)?.groupValues?.get(1)?.trim() ?: continue
-            val title = titleRe.find(block)?.groupValues?.get(1)?.trim()?.unescapeHtml() ?: continue
-            val sub = subRe.find(block)?.groupValues?.get(1)
-                ?.replace(Regex("<[^>]+>"), "")?.trim()?.unescapeHtml() ?: ""
-            val artist = sub.removePrefix("by").removePrefix("from").trim().lines().firstOrNull()?.trim() ?: ""
-            val img = imgRe.find(block)?.groupValues?.get(1)
-            results += RawItem(type, title, artist, if (url.startsWith("http")) url else "https://bandcamp.com$url", img)
-        }
-        return results
-    }
-
-    private fun RawItem.toTrack() = Track(
-        id = url,
-        title = title,
-        artists = listOfNotNull(artist.takeIf { it.isNotBlank() }?.let { Artist(it, it) }),
-        cover = imageUrl?.toImageHolder(),
-        extras = mapOf("url" to url)
-    )
-
-    private fun RawItem.toAlbum() = Album(
-        id = url,
-        title = title,
-        artists = listOfNotNull(artist.takeIf { it.isNotBlank() }?.let { Artist(it, it) }),
-        cover = imageUrl?.toImageHolder(),
-        extras = mapOf("url" to url)
-    )
-
-    private fun RawItem.toArtist() = Artist(
-        id = url,
-        name = title,
-        cover = imageUrl?.toImageHolder(),
-        extras = mapOf("url" to url)
-    )
-
-    // ─── TrackClient ─────────────────────────────────────────────────────────
-
-    override suspend fun loadTrack(track: Track, isDownload: Boolean): Track {
-        val url = track.extras["url"] ?: track.id
-        val html = get(url)
-        val tralbum = extractTralbumData(html) ?: return track
-        val info = tralbum.optJSONArray("trackinfo")
-            ?.takeIf { it.length() > 0 }?.getJSONObject(0) ?: return track
-        val streamUrl = info.optJSONObject("file")?.optString("mp3-128")
-        val duration = (info.optDouble("duration", 0.0) * 1000).toLong()
-        val artId = tralbum.optString("art_id")
-        val cover = artId.takeIf { it.isNotBlank() }
-            ?.let { "https://f4.bcbits.com/img/a${it}_9.jpg".toImageHolder() }
-            ?: track.cover
-        return track.copy(
-            duration = duration.takeIf { it > 0 } ?: track.duration,
-            cover = cover,
-            streamables = if (!streamUrl.isNullOrBlank())
-                listOf(Streamable.server(streamUrl, 0)) else emptyList(),
-            extras = track.extras + mapOf("streamUrl" to (streamUrl ?: ""))
-        )
-    }
-
-    override suspend fun loadStreamableMedia(streamable: Streamable, isDownload: Boolean): Streamable.Media {
-        return streamable.id.toServerMedia(
-            headers = mapOf("Referer" to "https://bandcamp.com/")
-        )
-    }
-
-    override suspend fun loadFeed(track: Track): Feed<Shelf>? = null
-
-    // ─── AlbumClient ─────────────────────────────────────────────────────────
-
-    override suspend fun loadAlbum(album: Album): Album {
-        val url = album.extras["url"] ?: album.id
-        val html = get(url)
-        val tralbum = extractTralbumData(html) ?: return album
-        val current = tralbum.optJSONObject("current") ?: JSONObject()
-        val artId = tralbum.optString("art_id")
-        val cover = artId.takeIf { it.isNotBlank() }
-            ?.let { "https://f4.bcbits.com/img/a${it}_9.jpg".toImageHolder() }
-        val artistName = tralbum.optString("artist").ifBlank { current.optString("artist") }
-        val tracks = tralbum.optJSONArray("trackinfo")?.let { arr ->
-            (0 until arr.length()).mapNotNull { i ->
-                val t = arr.getJSONObject(i)
-                val sUrl = t.optJSONObject("file")?.optString("mp3-128")
-                Track(
-                    id = url + "#" + i,
-                    title = t.optString("title"),
-                    artists = listOfNotNull(artistName.takeIf { it.isNotBlank() }?.let { Artist(it, it) }),
-                    duration = (t.optDouble("duration", 0.0) * 1000).toLong().takeIf { it > 0 },
-                    cover = cover,
-                    streamables = if (!sUrl.isNullOrBlank()) listOf(Streamable.server(sUrl, 0)) else emptyList(),
-                    extras = mapOf("streamUrl" to (sUrl ?: ""))
-                )
-            }
-        } ?: emptyList()
-        return album.copy(
-            title = current.optString("title").ifBlank { album.title },
-            artists = listOfNotNull(artistName.takeIf { it.isNotBlank() }?.let { Artist(it, it) }),
-            cover = cover ?: album.cover,
-            extras = album.extras + mapOf("tracks" to tracks.size.toString())
-        )
-    }
-
-    override suspend fun loadTracks(album: Album): Feed<Track>? {
-        val url = album.extras["url"] ?: album.id
-        val html = get(url)
-        val tralbum = extractTralbumData(html) ?: return null
-        val artistName = tralbum.optString("artist")
-        val artId = tralbum.optString("art_id")
-        val cover = artId.takeIf { it.isNotBlank() }
-            ?.let { "https://f4.bcbits.com/img/a${it}_9.jpg".toImageHolder() }
-        val tracks = tralbum.optJSONArray("trackinfo")?.let { arr ->
-            (0 until arr.length()).mapNotNull { i ->
-                val t = arr.getJSONObject(i)
-                val sUrl = t.optJSONObject("file")?.optString("mp3-128")
-                Track(
-                    id = url + "#" + i,
-                    title = t.optString("title"),
-                    artists = listOfNotNull(artistName.takeIf { it.isNotBlank() }?.let { Artist(it, it) }),
-                    duration = (t.optDouble("duration", 0.0) * 1000).toLong().takeIf { it > 0 },
-                    cover = cover,
-                    streamables = if (!sUrl.isNullOrBlank()) listOf(Streamable.server(sUrl, 0)) else emptyList(),
-                    extras = mapOf("streamUrl" to (sUrl ?: ""))
-                )
-            }
-        } ?: return null
-        return PagedData.Single { tracks }.toFeed()
-    }
-
-    override suspend fun loadFeed(album: Album): Feed<Shelf>? = null
-
-    // ─── ArtistClient ────────────────────────────────────────────────────────
-
-    override suspend fun loadArtist(artist: Artist): Artist {
-        val url = artist.extras["url"] ?: artist.id
-        val html = get(url)
-        val imgRe = Regex("""<img[^>]*id="band-photo"[^>]*src="([^"]+)"""")
-        val img = imgRe.find(html)?.groupValues?.get(1)
-        return artist.copy(cover = img?.toImageHolder() ?: artist.cover)
-    }
-
-    override suspend fun loadFeed(artist: Artist): Feed<Shelf> {
-        val url = artist.extras["url"] ?: artist.id
-        val html = get(url)
-        val albums = parseArtistAlbums(html, url)
-        val shelves: List<Shelf> = if (albums.isEmpty()) emptyList()
-        else listOf(
-            Shelf.Lists.Items(
-                id = "discography",
-                title = "Discography",
-                list = PagedData.Single { albums.map { it.toMediaItem() } }
-            )
-        )
-        return PagedData.Single { shelves }.toFeed()
-    }
-
-    private fun parseArtistAlbums(html: String, baseUrl: String): List<Album> {
-        val results = mutableListOf<Album>()
-        val itemRe = Regex("""<li[^>]*class="[^"]*music-grid-item[^"]*"[^>]*>(.*?)</li>""", RegexOption.DOT_MATCHES_ALL)
-        val hrefRe = Regex("""<a[^>]*href="(/(?:album|track)/[^"]+)"""")
-        val titleRe = Regex("""<p[^>]*class="[^"]*title[^"]*"[^>]*>\s*([^<]+?)\s*</p>""")
-        val imgRe = Regex("""<img[^>]*src="([^"]+)"""")
-        val base = baseUrl.trimEnd('/')
-        for (m in itemRe.findAll(html)) {
-            val block = m.groupValues[1]
-            val href = hrefRe.find(block)?.groupValues?.get(1) ?: continue
-            val title = titleRe.find(block)?.groupValues?.get(1)?.unescapeHtml() ?: continue
-            val img = imgRe.find(block)?.groupValues?.get(1)?.replace("_7.", "_9.")
-            val albumUrl = "$base$href"
-            results += Album(
-                id = albumUrl, title = title,
-                cover = img?.toImageHolder(),
-                extras = mapOf("url" to albumUrl)
-            )
-        }
-        return results
-    }
-
-    // ─── Helpers ─────────────────────────────────────────────────────────────
-
-    private fun extractTralbumData(html: String): JSONObject? {
-        val patterns = listOf(
-            Regex("""data-tralbum="(\{.*?})"[\s>]""", RegexOption.DOT_MATCHES_ALL),
-            Regex("""var\s+TralbumData\s*=\s*(\{.*?});\s*(?://|var\s|</script)""", RegexOption.DOT_MATCHES_ALL)
-        )
-        for (p in patterns) {
-            p.find(html)?.groupValues?.get(1)?.let { raw ->
-                runCatching { return JSONObject(raw.unescapeHtml()) }
-            }
-        }
-        return null
-    }
-
-    private fun encode(s: String) = URLEncoder.encode(s, "UTF-8")
-
-    private fun String.unescapeHtml() = this
-        .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-        .replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'")
-        .replace("&#x27;", "'").replace("&nbsp;", " ")
-
-    // helpers to convert models to EchoMediaItem
-    private fun Track.toMediaItem() = dev.brahmkshatriya.echo.common.models.EchoMediaItem.TrackItem(this)
-    private fun Album.toMediaItem() = dev.brahmkshatriya.echo.common.models.EchoMediaItem.AlbumItem(this)
-    private fun Artist.toMediaItem() = dev.brahmkshatriya.echo.common.models.EchoMediaItem.ArtistItem(this)
-}
+            val shelves: List<Shelf> = when
