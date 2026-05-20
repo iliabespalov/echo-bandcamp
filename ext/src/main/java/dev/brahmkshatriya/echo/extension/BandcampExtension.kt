@@ -101,7 +101,7 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
         """<li[^>]*class="[^"]*searchresult[^"]*"[^>]*>(.*?)</li>""",
         setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
     )
-    val typeRe = Regex("""<div[^>]*class="[^"]*itemtype[^"]*"[^>]*>\s*(\w+)\s*</div>""")
+    val typeRe = Regex("""<div[^>]*class="[^"]*itemtype[^"]*"[^>]*>\s*(\w+)""")
     val hrefRe = Regex("""<a[^>]*href="(https://[^"?#]+)""")
     val titleRe = Regex("""<div[^>]*class="[^"]*heading[^"]*"[^>]*>.*?<a[^>]*>\s*([^<\n]+?)\s*</a>""", RegexOption.DOT_MATCHES_ALL)
     val subRe = Regex("""<div[^>]*class="[^"]*subhead[^"]*"[^>]*>(.*?)</div>""", RegexOption.DOT_MATCHES_ALL)
