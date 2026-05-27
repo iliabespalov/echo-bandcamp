@@ -1,5 +1,6 @@
 package dev.brahmkshatriya.echo.extension
 
+import dev.brahmkshatriya.echo.common.helpers.ContinuationCallback.Companion.await
 import dev.brahmkshatriya.echo.common.clients.AlbumClient
 import dev.brahmkshatriya.echo.common.clients.ArtistClient
 import dev.brahmkshatriya.echo.common.clients.ExtensionClient
@@ -40,7 +41,7 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
             )
         }.build()
 
-    private fun get(url: String): String {
+    private fun suspend(url: String): String {
         http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
             if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}: $url")
             return resp.body?.string() ?: ""
@@ -81,16 +82,16 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
         val url: String, val imageUrl: String?
     )
 
-    private fun search(query: String, itemType: String) =
+    private suspend fun search(query: String, itemType: String) =
         parseResults(get("https://bandcamp.com/search?q=${encode(query)}&item_type=$itemType"), itemType)
 
-    private fun searchTracks(query: String): List<EchoMediaItem> =
+    private suspend fun searchTracks(query: String): List<EchoMediaItem> =
         search(query, "t").map { it.toTrack() }
 
-    private fun searchAlbums(query: String): List<EchoMediaItem> =
+    private suspend fun searchAlbums(query: String): List<EchoMediaItem> =
         search(query, "a").map { it.toAlbum() }
 
-    private fun searchArtists(query: String): List<EchoMediaItem> =
+    private suspend fun searchArtists(query: String): List<EchoMediaItem> =
         search(query, "b").map { it.toArtist() }
 
     private fun parseResults(html: String, filterType: String): List<RawItem> {
@@ -235,7 +236,7 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
         return PagedData.Single { shelves }.toFeed()
     }
 
-    private fun parseArtistAlbums(html: String, baseUrl: String): List<EchoMediaItem> {
+    private suspend fun parseArtistAlbums(html: String, baseUrl: String): List<EchoMediaItem> {
         val results = mutableListOf<EchoMediaItem>()
         val itemRe = Regex("""<li[^>]*class="[^"]*music-grid-item[^"]*"[^>]*>(.*?)</li>""", RegexOption.DOT_MATCHES_ALL)
         val hrefRe = Regex("""<a[^>]*href="(/(?:album|track)/[^"]+)"""")
