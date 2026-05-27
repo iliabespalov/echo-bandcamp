@@ -83,7 +83,7 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
     )
 
     private suspend fun search(query: String, itemType: String) =
-        parseResults(get("https://bandcamp.com/search?q=${encode(query)}&item_type=$itemType"), itemType)
+        parseResults(fetch("https://bandcamp.com/search?q=${encode(query)}&item_type=$itemType"), itemType)
 
     private suspend fun searchTracks(query: String): List<EchoMediaItem> =
         search(query, "t").map { it.toTrack() }
@@ -113,12 +113,12 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
 
     for (m in blockRe.findAll(html)) {
         val block = m.groupValues[1]
-        val type = typeRe.find(block)?.groupValues?.get(1)?.trim()?.lowercase() ?: continue
+        val type = typeRe.find(block)?.groupValues?.fetch(1)?.trim()?.lowercase() ?: continue
         if (type != wanted) continue
-        val url = hrefRe.find(block)?.groupValues?.get(1)?.trim() ?: continue
-        val title = titleRe.find(block)?.groupValues?.get(1)?.trim()?.unescapeHtml() ?: continue
+        val url = hrefRe.find(block)?.groupValues?.fetch(1)?.trim() ?: continue
+        val title = titleRe.find(block)?.groupValues?.fetch(1)?.trim()?.unescapeHtml() ?: continue
         // subhead для треков: "from ALBUM\nby ARTIST" или просто "by ARTIST"
-        val sub = subRe.find(block)?.groupValues?.get(1)
+        val sub = subRe.find(block)?.groupValues?.fetch(1)
             ?.replace(Regex("<[^>]+>"), "")
             ?.lines()
             ?.map { it.trim() }
@@ -127,7 +127,7 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
         // берём последнюю непустую строку — там обычно "by Radiohead"
         val artistLine = sub.lastOrNull() ?: ""
         val artist = artistLine.removePrefix("by").trim().unescapeHtml()
-        val img = imgRe.find(block)?.groupValues?.get(1)
+        val img = imgRe.find(block)?.groupValues?.fetch(1)
         results += RawItem(type, title, artist, url, img)
     }
     return results
@@ -153,7 +153,7 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
 
     override suspend fun loadTrack(track: Track, isDownload: Boolean): Track {
         val url = track.extras["url"] ?: track.id
-        val tralbum = extractTralbumData(get(url)) ?: return track
+        val tralbum = extractTralbumData(fetch(url)) ?: return track
         val info = tralbum.optJSONArray("trackinfo")
             ?.takeIf { it.length() > 0 }?.getJSONObject(0) ?: return track
         val streamUrl = info.optJSONObject("file")?.optString("mp3-128")
@@ -178,7 +178,7 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
 
     override suspend fun loadAlbum(album: Album): Album {
         val url = album.extras["url"] ?: album.id
-        val tralbum = extractTralbumData(get(url)) ?: return album
+        val tralbum = extractTralbumData(fetch(url)) ?: return album
         val current = tralbum.optJSONObject("current") ?: JSONObject()
         val artId = tralbum.optString("art_id")
         val cover = artId.takeIf { it.isNotBlank() }
@@ -193,7 +193,7 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
 
     override suspend fun loadTracks(album: Album): Feed<Track>? {
         val url = album.extras["url"] ?: album.id
-        val tralbum = extractTralbumData(get(url)) ?: return null
+        val tralbum = extractTralbumData(fetch(url)) ?: return null
         val artistName = tralbum.optString("artist")
         val artId = tralbum.optString("art_id")
         val cover = artId.takeIf { it.isNotBlank() }
@@ -222,14 +222,14 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
 
     override suspend fun loadArtist(artist: Artist): Artist {
         val url = artist.extras["url"] ?: artist.id
-        val html = get(url)
-        val img = Regex("""<img[^>]*id="band-photo"[^>]*src="([^"]+)"""").find(html)?.groupValues?.get(1)
+        val html = fetch(url)
+        val img = Regex("""<img[^>]*id="band-photo"[^>]*src="([^"]+)"""").find(html)?.groupValues?.fetch(1)
         return artist.copy(cover = img?.toImageHolder() ?: artist.cover)
     }
 
     override suspend fun loadFeed(artist: Artist): Feed<Shelf> {
         val url = artist.extras["url"] ?: artist.id
-        val html = get(url)
+        val html = fetch(url)
         val albums = parseArtistAlbums(html, url)
         val shelves: List<Shelf> = if (albums.isEmpty()) emptyList()
         else listOf(Shelf.Lists.Items("discography", "Discography", albums))
@@ -245,9 +245,9 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
         val base = baseUrl.trimEnd('/')
         for (m in itemRe.findAll(html)) {
             val block = m.groupValues[1]
-            val href = hrefRe.find(block)?.groupValues?.get(1) ?: continue
-            val title = titleRe.find(block)?.groupValues?.get(1)?.unescapeHtml() ?: continue
-            val img = imgRe.find(block)?.groupValues?.get(1)?.replace("_7.", "_9.")
+            val href = hrefRe.find(block)?.groupValues?.fetch(1) ?: continue
+            val title = titleRe.find(block)?.groupValues?.fetch(1)?.unescapeHtml() ?: continue
+            val img = imgRe.find(block)?.groupValues?.fetch(1)?.replace("_7.", "_9.")
             val albumUrl = "$base$href"
             results += Album(id = albumUrl, title = title, cover = img?.toImageHolder(), extras = mapOf("url" to albumUrl))
         }
@@ -261,7 +261,7 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
             Regex("""data-tralbum="(\{.*?})"[\s>]""", RegexOption.DOT_MATCHES_ALL),
             Regex("""var\s+TralbumData\s*=\s*(\{.*?});\s*(?://|var\s|</script)""", RegexOption.DOT_MATCHES_ALL)
         ).forEach { p ->
-            p.find(html)?.groupValues?.get(1)?.let { raw ->
+            p.find(html)?.groupValues?.fetch(1)?.let { raw ->
                 runCatching { return JSONObject(raw.unescapeHtml()) }
             }
         }
