@@ -51,23 +51,12 @@ class BandcampExtension : ExtensionClient, SearchFeedClient, TrackClient, AlbumC
     override fun setSettings(settings: Settings) {}
 
     override suspend fun loadSearchFeed(query: String): Feed<Shelf> {
-        val tabs = listOf("Tracks", "Albums", "Artists").map { Tab(it, it) }
-        return Feed(tabs) { tab ->
-            val shelves: List<Shelf> = when (tab?.id) {
-                "Albums" -> {
-                    val albums = searchAlbums(query)
-                    if (albums.isEmpty()) emptyList()
-                    else listOf(Shelf.Lists.Items("albums", "Albums", albums))
-                }
-                "Artists" -> {
-                    val artists = searchArtists(query)
-                    if (artists.isEmpty()) emptyList()
-                    else listOf(Shelf.Lists.Items("artists", "Artists", artists))
-                }
-                else -> searchTracks(query).map { Shelf.Item(it) }
-            }
-            PagedData.Single { shelves }.toFeedData()
+        val html = httpGet("https://bandcamp.com/search?q=${encode(query)}&item_type=t")
+        val tracks = parseResults(html, "t").map { Shelf.Item(it.toTrack()) }
+        val shelves: List<Shelf> = tracks.ifEmpty {
+            listOf(Shelf.Item(Track(id = "debug", title = "No results for: $query")))
         }
+        return PagedData.Single { shelves }.toFeed()
     }
 
     private data class RawItem(
